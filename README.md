@@ -19,6 +19,7 @@ sudo apt update
 sudo apt install python3-tk
 
 pip install --upgrade pillow
+python -m pip install numpy
 
 ##Operaciones disponibles##
 
