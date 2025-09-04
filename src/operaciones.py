@@ -36,3 +36,16 @@ class Operaciones:
             cp = img.data.copy()
             cp.putpixel((x,y), valor)
             return Imagen(cp)
+
+    @staticmethod
+    def negative(img1: Imagen) -> Imagen:
+        """
+        Convierte img1 a negativo sin truncamiento: normaliza el resultado a 0..255.
+        Devuelve Imagen (PIL.Image) con el resultado.
+        """
+        a1 = img1.to_numpy().astype(int)
+      
+        norm = (255.0 -a1 ).astype(np.uint8)
+        
+        return Imagen(Image.fromarray(norm))
+
