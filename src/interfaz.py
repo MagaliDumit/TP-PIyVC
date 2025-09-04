@@ -50,6 +50,7 @@ class ImageApp:
         tk.Button(frame_buttons, text="Seleccionar Región (arrastre)", width=20, command=self.activate_region_selection).pack(pady=4)
         tk.Button(frame_buttons, text="Copiar Región", width=20, command=self.copy_region).pack(pady=4)
         tk.Button(frame_buttons, text="Resta de Imágenes", width=20, command=self.subtract_images).pack(pady=4)
+        tk.Button(frame_buttons, text="Negativo", width=20, command=self.negative).pack(pady=4)
         tk.Button(frame_buttons, text="Reiniciar Interfaz", width=20, command=self.reiniciar).pack(pady=12)
         tk.Button(frame_buttons, text="Salir", width=20, command=self.root.quit).pack(pady=4)
 
