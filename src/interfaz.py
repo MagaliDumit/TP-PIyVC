@@ -287,3 +287,16 @@ class ImageApp:
         nuevo_root = tk.Tk()
         app = ImageApp(nuevo_root, carpeta)
         nuevo_root.mainloop()
+
+    # ---------- negativo ----------
+    def negative(self):
+        if not self.image:
+            messagebox.showwarning("Atención", "Cargue primero la imagen base")
+            return
+
+        result = Operaciones.negative(self.image)
+        return self.show_image(result, self.canvas_result)
+    
+
+
+
