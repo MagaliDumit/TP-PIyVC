@@ -1,4 +1,3 @@
-# src/raw_reader.py
 import os
 
 class RAWReader:

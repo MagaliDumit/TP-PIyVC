@@ -1,4 +1,3 @@
-# src/main.py
 import tkinter as tk
 from interfaz import ImageApp
 import os

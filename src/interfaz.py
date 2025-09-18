@@ -1,19 +1,19 @@
-# src/interfaz.py
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog, Toplevel
 from PIL import Image, ImageTk
 from raw_reader import RAWReader
 from imagen import Imagen
 from operaciones import Operaciones
 
-DISPLAY_SIZE = (400, 400)  # tamaño fijo de la vista (ancho, alto)
+
+DISPLAY_SIZE = (500, 500)  # tamaño fijo de la vista (ancho, alto)
 
 class ImageApp:
     def __init__(self, root, carpeta_imagenes):
         self.root = root
         self.carpeta = carpeta_imagenes
-        self.root.title("TP0 - Visor RAW/PGM/Imagenes")
+        self.root.title("TP - Editor de Imagenes")
         self.image = None            # Imagen activa (Imagen)
         self.image_result = None     # Resultado mostrado
         self.tk_img_original = None
@@ -25,6 +25,7 @@ class ImageApp:
         self.readme_map = RAWReader.leer_readme(readme_path)
 
         self._build_ui()
+        self._build_menus()
 
     def _build_ui(self):
         frame_buttons = tk.Frame(self.root)
@@ -50,13 +51,52 @@ class ImageApp:
         tk.Button(frame_buttons, text="Seleccionar Región (arrastre)", width=20, command=self.activate_region_selection).pack(pady=4)
         tk.Button(frame_buttons, text="Copiar Región", width=20, command=self.copy_region).pack(pady=4)
         tk.Button(frame_buttons, text="Resta de Imágenes", width=20, command=self.subtract_images).pack(pady=4)
-        tk.Button(frame_buttons, text="Negativo", width=20, command=self.negative).pack(pady=4)
+        
         tk.Button(frame_buttons, text="Reiniciar Interfaz", width=20, command=self.reiniciar).pack(pady=12)
-        tk.Button(frame_buttons, text="Salir", width=20, command=self.root.quit).pack(pady=4)
+
+
+    def _build_menus(self):
+        menu_bar = tk.Menu(self.root)
+        self.root.config(menu=menu_bar)
+
+        # Menu Operaciones Básicas
+        tp1_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Ejercicios del 1 al 5", menu=tp1_menu)
+        tp1_menu.add_command(label="Gamma", command=self.gamma)        
+        tp1_menu.add_command(label="Negativo", command=self.negative)
+        tp1_menu.add_command(label="Mostrar Histograma Original", command=self.histograma_original)
+        tp1_menu.add_command(label="Mostrar Histograma Resultado", command=self.histograma_resultado)
+        tp1_menu.add_command(label="Umbral", command=self.umbral)
+        tp1_menu.add_command(label="Ecualizar Histograma", command=self.ecualizar)
+        
+        # Menu Ruido
+        ruido_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Ruido", menu=ruido_menu)
+        ruido_menu.add_command(label="Ruido Gaussiano Aditivo", command=self.ruido_gaussiano)
+        ruido_menu.add_command(label="Ruido Rayleigh Multiplicativo", command=self.ruido_rayleigh)
+        ruido_menu.add_command(label="Ruido Exponencial Multiplicativo", command=self.ruido_exponencial)
+        ruido_menu.add_command(label="Ruido Sal y Pimienta", command=self.ruido_sal_y_pimienta)
+
+        # Menu Filtros
+        filtros_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Filtros Espaciales", menu=filtros_menu)
+        filtros_menu.add_command(label="Filtro de la Media", command=self.filtro_de_la_media)
+        filtros_menu.add_command(label="Filtro de la Mediana", command=self.filtro_de_la_mediana)
+        filtros_menu.add_command(label="Filtro de Mediana Ponderada", command=self.filtro_mediana_ponderada)
+        filtros_menu.add_command(label="Filtro de Gaussiano", command=self.filtro_gaussiano)
+        filtros_menu.add_command(label="Realce de Bordes (Laplace)", command=self.realce_de_bordes)
+
+
+    def cargar_imagen_primero(self):
+        if not self.image:
+            messagebox.showwarning("Atención", "Cargue primero una imagen")
+            return
 
     # ---------- carga y visualización ----------
     def cargar_imagen(self):
         path = filedialog.askopenfilename(initialdir=self.carpeta, filetypes=[("Imagenes", "*.png *.jpg *.bmp *.RAW *.PGM")])
+        self.image_name = os.path.basename(path)
+
         if not path:
             return
         ext = os.path.splitext(path)[1].lower()
@@ -78,14 +118,13 @@ class ImageApp:
                 pgm_data = RAWReader.leer_pgm(path)
                 self.image = Imagen(pgm_data)
             else:
-                pil = Image.open(path).convert("RGB")
+                pil = Image.open(path).convert("L") # <-- ¡Cambio clave aquí! 'L' para escala de grises
                 self.image = Imagen(pil)
         except Exception as e:
             messagebox.showerror("Error al cargar", str(e))
             return
 
         self.show_image(self.image, self.canvas_original)
-
     def show_image(self, img_obj: Imagen, canvas: tk.Canvas):
         """Muestra imagen en el canvas (reescala a DISPLAY_SIZE). Guarda referencia PhotoImage."""
         pil = img_obj.to_pil()
@@ -109,9 +148,7 @@ class ImageApp:
 
     # ---------- get / set pixel ----------
     def get_pixel_dialog(self):
-        if not self.image:
-            messagebox.showwarning("Atención", "Cargue primero una imagen")
-            return
+        self.cargar_imagen_primero()
         # pedir coordenadas en coordenadas de la imagen original
         w,h = self.image.get_size()
         x = simpledialog.askinteger("x", f"X (0..{w-1}):", minvalue=0, maxvalue=w-1)
@@ -122,9 +159,7 @@ class ImageApp:
         messagebox.showinfo("Valor de pixel", f"Pixel ({x},{y}) = {val}")
 
     def modify_pixel_dialog(self):
-        if not self.image:
-            messagebox.showwarning("Atención", "Cargue primero una imagen")
-            return
+        self.cargar_imagen_primero()
         w,h = self.image.get_size()
         x = simpledialog.askinteger("x", f"X (0..{w-1}):", minvalue=0, maxvalue=w-1)
         y = simpledialog.askinteger("y", f"Y (0..{h-1}):", minvalue=0, maxvalue=h-1)
@@ -147,9 +182,7 @@ class ImageApp:
 
     # ---------- selección de región con mouse ----------
     def activate_region_selection(self):
-        if not self.image:
-            messagebox.showwarning("Atención", "Cargue primero una imagen")
-            return
+        self.cargar_imagen_primero()
         # bind a canvas original
         self.canvas_original.bind("<Button-1>", self.on_click)
         self.canvas_original.bind("<ButtonRelease-1>", self.on_release)
@@ -208,9 +241,7 @@ class ImageApp:
 
     # ---------- resta de imágenes ----------
     def subtract_images(self):
-        if not self.image:
-            messagebox.showwarning("Atención", "Cargue primero la imagen base")
-            return
+        self.cargar_imagen_primero()
         path2 = filedialog.askopenfilename(initialdir=self.carpeta, filetypes=[("Imagenes", "*.png *.jpg *.bmp *.RAW *.PGM")])
         if not path2:
             return
@@ -289,15 +320,160 @@ class ImageApp:
         app = ImageApp(nuevo_root, carpeta)
         nuevo_root.mainloop()
 
+
+# -------------- TP1 -----------------
+
+    def gamma(self):
+        self.cargar_imagen_primero()
+
+        y = simpledialog.askfloat("Transformación Gamma", 
+                                  "Ingrese el valor de γ (0 < γ < 2, γ ≠ 1):",
+                                  minvalue=0.1, maxvalue=2.0)
+        if (y>0 and y<2):
+            result = Operaciones.gamma(self.image,y)
+            return self.show_image(result, self.canvas_result)
+        else:
+            return messagebox.showerror("Error","Valor incorrecto")
+
+
     # ---------- negativo ----------
     def negative(self):
-        if not self.image:
-            messagebox.showwarning("Atención", "Cargue primero la imagen base")
-            return
-
+        self.cargar_imagen_primero()
         result = Operaciones.negative(self.image)
         return self.show_image(result, self.canvas_result)
     
 
+    # ---------- histograma ----------
+    def mostrar_histograma(self, img: Imagen, title: str):
+        """Función auxiliar para mostrar el histograma."""
+        hist = Operaciones.histograma(img)
+
+        win = Toplevel(self.root)
+        win.title(title)
+        
+        canvas = tk.Canvas(win, width=512, height=300, bg="white")
+        canvas.pack(padx=10, pady=10)
+
+        h_max = hist.max()
+        if h_max >= 0:
+            for i, h in enumerate(hist):
+                x0 = 2 * i
+                x1 = 2 * i + 2
+                y1 = 300
+                y0 = 300 - int((h / h_max) * 300)
+                canvas.create_rectangle(x0, y0, x1, y1, fill="skyblue", outline="black")
+        
+
+    def histograma_original(self):
+        self.cargar_imagen_primero()
+        result = self.mostrar_histograma(self.image, "Histograma Imagen Original de " + self.image_name)
+        return self.show_image(result, self.canvas_result)
 
 
+    def histograma_resultado(self):
+        if self.image_result is None:
+            messagebox.showwarning("Advertencia", "No hay una imagen de resultado para mostrar el histograma.")
+            return
+        result = self.mostrar_histograma(self.image_result, "Histograma Imagen Resultado de " + self.image_name)
+        return self.show_image(result, self.canvas_result)
+
+
+    def umbral(self):
+        self.cargar_imagen_primero()
+        u = simpledialog.askfloat("Umbralización", "Ingrese el valor del umbral:", minvalue=1, maxvalue=255)
+    
+        if (u > 0 and u <= 255):
+            result = Operaciones.umbral(self.image, u)
+            return self.show_image(result, self.canvas_result)
+        else:
+            return messagebox.showerror("Error","Valor fuera de rango")
+        
+    def ecualizar(self):
+        self.cargar_imagen_primero()
+        result = Operaciones.ecualizar_histograma(self.image)
+        return self.show_image(result, self.canvas_result)
+    
+# --- Métodos para Ruido ---
+    def ruido_gaussiano(self):
+        self.cargar_imagen_primero()
+
+        #mu = simpledialog.askfloat("Ruido Gaussiano", "Ingrese el valor de mu (media):")
+        sigma = simpledialog.askfloat("Ruido Gaussiano", "Ingrese el valor de sigma (desviación estándar):")
+        porcentaje = simpledialog.askfloat("Ruido Gaussiano", "Ingrese el porcentaje de píxeles a afectar(0-1):", minvalue=0, maxvalue=100)
+        
+        result = Operaciones.aplicar_ruido_gaussiano(self.image, 0 , sigma, porcentaje)
+        return self.show_image(result, self.canvas_result)
+
+    def ruido_rayleigh(self):
+        self.cargar_imagen_primero()
+
+        xi = simpledialog.askfloat("Ruido Rayleigh", "Ingrese el valor de xi:", minvalue=0.01)
+        porcentaje = simpledialog.askfloat("Ruido Rayleigh", "Ingrese el porcentaje de píxeles a afectar (0-1):", minvalue=0.0, maxvalue=100.0)
+
+        result = Operaciones.aplicar_ruido_rayleigh(self.image, xi, porcentaje)
+        return self.show_image(result, self.canvas_result)
+
+
+    def ruido_exponencial(self):
+        self.cargar_imagen_primero()
+       
+        lambd = simpledialog.askfloat("Ruido Exponencial", "Ingrese el valor de lambda:", minvalue=0.01)
+        porcentaje = simpledialog.askfloat("Ruido Exponencial", "Ingrese el porcentaje de píxeles a afectar (0-1):", minvalue=0.0, maxvalue=100.0)
+        
+        result = Operaciones.aplicar_ruido_exponencial(self.image, lambd, porcentaje)
+        return self.show_image(result, self.canvas_result)
+        
+    def ruido_sal_y_pimienta(self):
+        self.cargar_imagen_primero()
+        density = simpledialog.askfloat("Ruido Sal y Pimienta", "Ingrese la densidad (0-1):", minvalue=0.0, maxvalue=100.0)
+        result = Operaciones.aplicar_ruido_sal_y_pimienta(self.image, density)
+        return self.show_image(result, self.canvas_result)
+        
+
+    
+    # --- Métodos para Filtros ---
+    def filtro_de_la_media(self):
+        self.cargar_imagen_primero()
+        k_size = simpledialog.askinteger("Filtro de la Media", "Ingrese el tamaño del kernel (ej: 3 para 3x3):", minvalue=3, maxvalue=9)
+        if k_size % 2 == 0:
+            return messagebox.showerror("Error", "El tamaño del kernel debe ser un número impar.")
+            
+        result = Operaciones.filtro_media(self.image, k_size)
+        return self.show_image(result, self.canvas_result)
+
+    def filtro_de_la_mediana(self):
+        self.cargar_imagen_primero()
+        k_size = simpledialog.askinteger("Filtro de la Mediana", "Ingrese el tamaño del kernel (ej: 3 para 3x3):", minvalue=3, maxvalue=9)
+        if k_size % 2 == 0:
+            return messagebox.showerror("Error", "El tamaño del kernel debe ser un número impar.")
+            
+        result = Operaciones.filtro_mediana(self.image, k_size)
+        return self.show_image(result, self.canvas_result)
+    
+
+    def filtro_mediana_ponderada(self):
+        self.cargar_imagen_primero()
+
+        k_size = simpledialog.askinteger("Filtro de Mediana Ponderada", "Ingrese el tamaño del kernel (ej: 3 para 3x3):", minvalue=3, maxvalue=5, initialvalue=3)
+        if k_size is None or k_size % 2 == 0:
+            return messagebox.showerror("Error", "El tamaño del kernel debe ser un número impar.")
+
+        result = Operaciones.filtro_mediana_ponderada(self.image, k_size)
+        return self.show_image(result, self.canvas_result)
+        
+
+    def filtro_gaussiano(self):
+        self.cargar_imagen_primero()
+
+        k_size = simpledialog.askinteger("Filtro Gaussiano", "Ingrese el tamaño del kernel (ej: 3 para 3x3):", minvalue=1, maxvalue=9)
+        if k_size % 2 == 0:
+            return messagebox.showerror("Error", "El tamaño del kernel debe ser un número impar.")
+        
+        sigma = simpledialog.askfloat("Filtro Gaussiano", "Ingrese el valor de sigma (ej: 1.0):", minvalue=0.1)
+        result = Operaciones.filtro_gaussiano(self.image, k_size, sigma)
+        return self.show_image(result, self.canvas_result)
+         
+    def realce_de_bordes(self):
+        self.cargar_imagen_primero()
+        result = Operaciones.realce_bordes(self.image)
+        return self.show_image(result, self.canvas_result)

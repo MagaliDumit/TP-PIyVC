@@ -1,6 +1,6 @@
 INTRODUCCION AL PROCESAMIENTO DIGITAL DE IMAGENES
 
-Las im genes disponibles hasta ahora son:
+Las imï¿½genes disponibles hasta ahora son:
 
 Nombre       Ancho     Alto
 
