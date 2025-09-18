@@ -86,6 +86,9 @@ class ImageApp:
         filtros_menu.add_command(label="Filtro de Gaussiano", command=self.filtro_gaussiano)
         filtros_menu.add_command(label="Realce de Bordes (Laplace)", command=self.realce_de_bordes)
 
+        filtros_menu.add_command(label="Prewitt horizontal", command=self.prewitt_horizontal)
+        filtros_menu.add_command(label="Prewitt vertical", command=self.prewitt_vertical)
+
 
     def cargar_imagen_primero(self):
         if not self.image:
@@ -477,3 +480,21 @@ class ImageApp:
         self.cargar_imagen_primero()
         result = Operaciones.realce_bordes(self.image)
         return self.show_image(result, self.canvas_result)
+
+
+    #------------ TP 2 ---------------
+    # detector_de_bordes
+
+    def prewitt_horizontal(self):
+        self.cargar_imagen_primero()
+        sigma = simpledialog.askfloat("Prewitt", "Ingrese el valor de sigma:", minvalue=1)
+        result = Operaciones.prewitt_horizontal(self.image, sigma)
+        return self.show_image(result, self.canvas_result)
+    
+    def prewitt_vertical(self):
+        self.cargar_imagen_primero()
+        sigma = simpledialog.askfloat("Prewitt", "Ingrese el valor de sigma:", minvalue=1)
+        result = Operaciones.prewitt_vertical(self.image, sigma)
+        return self.show_image(result, self.canvas_result)
+    
+
