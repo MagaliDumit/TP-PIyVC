@@ -255,6 +255,11 @@ class Operaciones:
                     output[y, x] = np.sum(window * kernel)
                 elif tipo_filtro == 'realce_bordes':
                     output[y, x] = np.sum(window * kernel)
+                elif tipo_filtro == 'prewitt horizontal':
+                    output[y, x] = np.sum(window * kernel)
+                elif tipo_filtro == 'prewitt vertical':
+                    output[y, x] = np.sum(window * kernel)
+
 
         output = np.clip(output, 0, 255).astype(np.uint8)
         return Imagen(Image.fromarray(output))
