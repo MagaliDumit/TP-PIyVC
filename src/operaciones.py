@@ -342,3 +342,17 @@ class Operaciones:
         """
         kernel = np.array([[0, -1, 0], [-1, 4, -1], [0, -1, 0]])
         return Operaciones.aplicar_filtro_deslizante(img, kernel, 'realce_bordes')
+
+
+
+
+#------------ TP 2 ---------------
+    # detector_de_bordes
+    def prewitt_horizontal(img: Imagen) -> Imagen:
+        kernel = np.array([[-1, -1, -1], [0,0,0], [1,1,1]])
+        return Operaciones.aplicar_filtro_deslizante(img, kernel, 'prewitt horizontal')
+    
+    def prewitt_vertical(img: Imagen) -> Imagen:
+        kernel = np.array([[-1, 0, 1], [-1, 0, 1], [-1,0,1]])
+        return Operaciones.aplicar_filtro_deslizante(img, kernel, 'prewitt vertical')
+    
