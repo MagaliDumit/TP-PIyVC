@@ -40,19 +40,31 @@ class Imagen:
             return Imagen(region)
 
     def to_pil(self):
-        """Convierte lista 2D a PIL.Image 'L' o devuelve la PIL si ya lo es."""
+        """Convierte data a PIL.Image o devuelve la instancia si ya lo es."""
         if isinstance(self.data, list):
             alto = len(self.data)
             ancho = len(self.data[0]) if alto>0 else 0
             img = Image.new("L", (ancho, alto))
             for y in range(alto):
                 for x in range(ancho):
-                    img.putpixel((x,y), int(self.data[y][x]))
+                    img.putpixel((x, y), int(self.data[y][x]))
             return img
-        return self.data
+        # Si ya es una instancia de PIL.Image, devuélvela
+        if isinstance(self.data, Image.Image):
+             return self.data
+        # Si es un numpy array, conviértelo
+        if isinstance(self.data, np.ndarray):
+            if self.data.ndim == 3: # Color
+                return Image.fromarray(self.data.astype(np.uint8), 'RGB')
+            else: # Grayscale
+                return Image.fromarray(self.data.astype(np.uint8), 'L')
+        return None # O manejar error
 
     def to_numpy(self):
-        """Devuelve numpy array (H,W) o (H,W,3) dtype=uint8"""
-        pil = self.to_pil()
-        arr = np.array(pil)
-        return arr
+        """Convierte data a numpy array. Respeta el modo si es PIL.Image."""
+        if isinstance(self.data, list):
+            # Para datos RAW/PGM, que son grayscale
+            return np.array(self.data, dtype=np.uint8)
+        else:
+            # Para PIL.Image, convierte a array sin cambiar el modo (puede ser 'L' o 'RGB')
+            return np.array(self.data)
