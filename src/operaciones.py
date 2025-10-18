@@ -161,9 +161,9 @@ class Operaciones:
         gy = Operaciones.aplicar_filtro_deslizante(Imagen(arr), kernel_y, normalizar=False)
         magnitud = np.sqrt(gx**2 + gy**2)
         magnitud = (255.0 * magnitud / magnitud.max()).astype(np.uint8)
-        umbral = np.mean(magnitud) * 1.2
-        bordes = np.where(magnitud > umbral, 255, 0).astype(np.uint8)
-        return Imagen(Image.fromarray(bordes))
+        #umbral = np.mean(magnitud) * 1.2
+        #bordes = np.where(magnitud > umbral, 255, 0).astype(np.uint8)
+        return Imagen(Image.fromarray(magnitud))
 
     @staticmethod
     def detector_sobel(img: Imagen) -> Imagen:
@@ -174,19 +174,19 @@ class Operaciones:
         gy = Operaciones.aplicar_filtro_deslizante(Imagen(arr), kernel_y, normalizar=False)
         magnitud = np.sqrt(gx**2 + gy**2)
         magnitud = (255.0 * magnitud / magnitud.max()).astype(np.uint8)
-        umbral = np.mean(magnitud) * 1.2
-        bordes = np.where(magnitud > umbral, 255, 0).astype(np.uint8)
-        return Imagen(Image.fromarray(bordes))
+        #umbral = np.mean(magnitud) * 1.2
+        #bordes = np.where(magnitud > umbral, 255, 0).astype(np.uint8)
+        return Imagen(Image.fromarray(magnitud))
 
     @staticmethod
-    def _zero_crossing_detector(image_array):
+    def _zero_crossing_detector(image_array, threshold):
         """
         Función helper para detectar cruces por cero de forma robusta.
         Busca cambios de signo entre pixeles vecinos.
         """
         bordes = np.zeros(image_array.shape, dtype=np.uint8)
         # Umbral para la magnitud del cambio (evita marcar ruido)
-        threshold = np.max(np.abs(image_array)) * 0.10
+        #threshold = np.max(np.abs(image_array)) * 0.10
 
         # Iterar sobre la imagen (excepto los bordes)
         for y in range(1, image_array.shape[0] - 1):
@@ -296,15 +296,15 @@ class Operaciones:
         return Operaciones.umbral(img, mejor_umbral)
 
     @staticmethod
-    def umbralizacion_por_bandas_rgb(img: Imagen, r_min: int, r_max: int, g_min: int, g_max: int, b_min: int, b_max: int) -> Imagen:
+    def umbralizacion_por_bandas_rgb(img: Imagen) -> Imagen:
         arr = img.to_numpy()
         if arr.ndim != 3 or arr.shape[2] != 3:
             raise ValueError("La imagen debe ser RGB.")
         
         r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
-        mask = (r >= r_min) & (r <= r_max) & \
-               (g >= g_min) & (g <= g_max) & \
-               (b >= b_min) & (b <= b_max)
+        mask = (Operaciones.umbral_otsu(r)) & \
+               (Operaciones.umbral_otsu(g)) & \
+               (Operaciones.umbral_otsu(b))
         
         output = np.zeros_like(arr)
         output[mask] = arr[mask]
