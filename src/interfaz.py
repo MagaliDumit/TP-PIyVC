@@ -100,6 +100,7 @@ class ImageApp:
         bordes_lap_menu = tk.Menu(tp2_menu, tearoff=0)
         tp2_menu.add_cascade(label="Detectores de Borde (Laplaciano)", menu=bordes_lap_menu)
         bordes_lap_menu.add_command(label="Detector Laplaciano", command=self.detector_laplaciano)
+        bordes_lap_menu.add_command(label="Detector Laplaciano con pendiente", command=self.detector_laplaciano_pendiente)
         bordes_lap_menu.add_command(label="Detector LoG (Marr-Hildreth)", command=self.detector_log)
 
         # Filtros avanzados
@@ -397,17 +398,35 @@ class ImageApp:
     def detector_sobel(self):
         if not self.cargar_imagen_primero(): return
         self.show_image(Operaciones.detector_sobel(self.image), self.canvas_result)
-        
+
     def detector_laplaciano(self):
         if not self.cargar_imagen_primero(): return
-        self.show_image(Operaciones.detector_laplaciano(self.image), self.canvas_result)
+        
+        threshold = simpledialog.askfloat("Detector Laplaciano","Ingrese el umbral:",minvalue=0.0)
+        if threshold is None: return  # Canceló el diálogo
+        
+        self.show_image(Operaciones.detector_laplaciano(self.image, threshold),self.canvas_result)
+
+
+    def detector_laplaciano_pendiente(self):
+        if not self.cargar_imagen_primero(): return
+        threshold = simpledialog.askfloat(
+            "Laplaciano con pendiente",
+            "Ingrese el umbral de pendiente (u_b):",
+            minvalue=0.0
+        )
+        if threshold is None: return
+        self.show_image(
+            Operaciones.detector_laplaciano_pendiente(self.image, threshold), self.canvas_result)
 
     def detector_log(self):
         if not self.cargar_imagen_primero(): return
-        k_size = simpledialog.askinteger("Detector LoG", "Tamaño del kernel (impar):", minvalue=3, maxvalue=21)
-        sigma = simpledialog.askfloat("Detector LoG", "Sigma:", minvalue=0.1)
-        if k_size and sigma and k_size % 2 != 0:
-            self.show_image(Operaciones.detector_log(self.image, k_size, sigma), self.canvas_result)
+        sigma = simpledialog.askfloat("Detector LoG", "Ingrese Sigma:", minvalue=0.1)
+        if sigma is None: return
+        threshold = simpledialog.askfloat("Detector LoG", "Ingrese el umbral:", minvalue=0.0)
+        if threshold is None: return
+
+        self.show_image(Operaciones.detector_log(self.image, sigma, threshold), self.canvas_result)
 
     def difusion_isotropica(self):
         if not self.cargar_imagen_primero(): return
@@ -442,27 +461,10 @@ class ImageApp:
         if not self.cargar_imagen_primero(): return
         if self.image.to_pil().mode != 'RGB':
             messagebox.showerror("Error", "Esta operación requiere una imagen a color (RGB).")
-            return
-
-        win = Toplevel(self.root); win.title("Umbrales por Banda"); win.resizable(False, False)
-        entries = {}
-        for i, canal in enumerate(["Rojo", "Verde", "Azul"]):
-            tk.Label(win, text=f"{canal}:").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-            min_e = tk.Entry(win, width=5); min_e.grid(row=i, column=1, pady=5); min_e.insert(0, "0")
-            tk.Label(win, text="a").grid(row=i, column=2)
-            max_e = tk.Entry(win, width=5); max_e.grid(row=i, column=3, pady=5); max_e.insert(0, "255")
-            entries[canal] = (min_e, max_e)
-
-        def aplicar():
-            try:
-                p = [int(e.get()) for k in entries for e in entries[k]]
-                if not (0<=p[0]<=p[1]<=255 and 0<=p[2]<=p[3]<=255 and 0<=p[4]<=p[5]<=255):
-                    messagebox.showerror("Error", "Valores fuera de rango (0-255) o min > max.", parent=win)
-                    return
-                self.show_image(Operaciones.umbralizacion_por_bandas_rgb(self.image, *p), self.canvas_result)
-                win.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Error de entrada: {e}", parent=win)
-
-        tk.Button(win, text="Aplicar", command=aplicar).grid(row=3, columnspan=4, pady=10)
-        win.transient(self.root); win.grab_set(); self.root.wait_window(win)
+            return    
+        try:
+            messagebox.showinfo("Procesando", "Calculando umbrales de Otsu para cada canal RGB. Por favor, espere.")
+            result = Operaciones.umbralizacion_por_bandas_rgb(self.image)
+            self.show_image(result, self.canvas_result)
+        except Exception as e:
+            messagebox.showerror("Error", f"Ocurrió un error: {e}")

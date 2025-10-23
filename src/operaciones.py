@@ -211,26 +211,137 @@ class Operaciones:
                    (abs(image_array[y-1, x-1]) + abs(image_array[y+1, x+1]) > threshold):
                     bordes[y, x] = 255
         return bordes
+    
 
     @staticmethod
-    def detector_laplaciano(img: Imagen) -> Imagen:
+    def detector_laplaciano(img: Imagen, threshold: float) -> Imagen:
+        """
+        Detecta bordes usando el operador Laplaciano y cruces por cero.
+        Permite definir manualmente el umbral de detección.
+        """
         kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]])
-        # Aplicar el filtro sin normalizar para obtener valores positivos y negativos
+        # Aplicar el filtro Laplaciano sin normalizar
         arr_laplace = Operaciones.aplicar_filtro_deslizante(img, kernel, normalizar=False)
-        # Detectar los cruces por cero en el resultado
-        bordes = Operaciones._zero_crossing_detector(arr_laplace)
+        # Detectar los cruces por cero con el umbral definido por el usuario
+        bordes = Operaciones._zero_crossing_detector(arr_laplace, threshold)
         return Imagen(Image.fromarray(bordes))
 
     @staticmethod
-    def detector_log(img: Imagen, k_size: int, sigma: float) -> Imagen:
-        # 1. Suavizar la imagen con un filtro Gaussiano
-        img_suavizada = Operaciones.filtro_gaussiano(img, k_size, sigma)
-        # 2. Aplicar el filtro Laplaciano
-        kernel_laplace = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]])
-        arr_log = Operaciones.aplicar_filtro_deslizante(img_suavizada, kernel_laplace, normalizar=False)
-        # 3. Detectar los cruces por cero
-        bordes = Operaciones._zero_crossing_detector(arr_log)
+    def detector_laplaciano_pendiente(img: 'Imagen', threshold: float) -> 'Imagen':
+        """
+        Detector de bordes Laplaciano con evaluación de la pendiente.
+        Basado en: ΔI(x,y) = 4I(x,y) - I(x-1,y) - I(x+1,y) - I(x,y-1) - I(x,y+1)
+        y marca un borde si hay cambio de signo y |a + b| > threshold.
+        """
+        arr = img.to_numpy().astype(float)
+        if arr.ndim == 3:
+            arr = np.mean(arr, axis=2)
+        
+        h, w = arr.shape
+        lap = np.zeros_like(arr, dtype=float)
+
+        # Aplicar la fórmula discreta del Laplaciano
+        lap[1:-1, 1:-1] = (
+            4 * arr[1:-1, 1:-1]
+            - arr[1:-1, 0:-2]
+            - arr[1:-1, 2:]
+            - arr[0:-2, 1:-1]
+            - arr[2:, 1:-1]
+        )
+
+        # Detectar cruces por cero con evaluación de pendiente
+        bordes = np.zeros_like(lap, dtype=np.uint8)
+
+        for y in range(1, h - 1):
+            for x in range(1, w - 1):
+                # Revisar pares de vecinos
+                vecinos = [
+                    (lap[y, x - 1], lap[y, x + 1]),   # horizontal
+                    (lap[y - 1, x], lap[y + 1, x]),   # vertical
+                    (lap[y - 1, x - 1], lap[y + 1, x + 1]), # diagonal \
+                    (lap[y - 1, x + 1], lap[y + 1, x - 1])  # diagonal /
+                ]
+
+                for a, b in vecinos:
+                    if a * b < 0:  # cambio de signo
+                        pendiente = abs(a + b)
+                        if pendiente > threshold:
+                            bordes[y, x] = 255
+                            break
+
         return Imagen(Image.fromarray(bordes))
+
+
+    @staticmethod
+    def detector_log(img: 'Imagen', sigma: float, threshold: float) -> 'Imagen':
+        """
+        Implementación del detector de bordes Laplaciano del Gaussiano (LoG)
+        usando la fórmula exacta de Marr & Hildreth (1988).
+
+        ΔGσ(x,y) = (1 / (2πσ³)) * e^(-(x² + y²)/(2σ²)) * ((x² + y²)/σ² - 2)
+        """
+        # 1. Calcular el tamaño del kernel (mínimo n = 4σ + 1)
+        k_size = int(2 * sigma + 1)
+        if k_size % 2 == 0:
+            k_size += 1
+        r = k_size // 2
+
+        # 2. Generar las coordenadas centradas
+        x, y = np.meshgrid(np.arange(-r, r + 1), np.arange(-r, r + 1))
+        rsq = x**2 + y**2
+
+        # 3. Construir la máscara LoG según la fórmula
+        log_kernel = (1 / (2 * np.pi * (sigma ** 3))) * \
+                     np.exp(-(rsq) / (2 * sigma ** 2)) * \
+                     ((rsq / (sigma ** 2)) - 2)
+
+        # 4. Aplicar la convolución directamente con esta máscara
+        arr_log = Operaciones.aplicar_filtro_deslizante(img, log_kernel, normalizar=False)
+
+        # 5. Detectar los cruces por cero usando el umbral ingresado por el usuario
+        bordes = Operaciones._zero_crossing_detector(arr_log, threshold)
+
+        # 6. Devolver la imagen de bordes
+        return Imagen(Image.fromarray(bordes))
+
+
+
+    @staticmethod
+    def detector_log(img: 'Imagen', sigma: float, threshold: float) -> 'Imagen':
+        """
+        Implementación del LoG según Marr-Hildreth:
+        ΔGσ(x,y) = (1 / (2πσ³)) * e^{-(x²+y²)/(2σ²)} * ((x²+y²)/σ² - 2)
+        Tamaño mínimo de máscara n = 4*sigma + 1
+        """
+        # 1) tamaño del kernel (mínimo n = 4*sigma + 1)
+        k_size = int(4 * sigma + 1)
+        if k_size % 2 == 0:
+            k_size += 1
+        r = k_size // 2
+
+        # 2) coordenadas centradas
+        x, y = np.meshgrid(np.arange(-r, r + 1), np.arange(-r, r + 1))
+        rsq = x**2 + y**2
+
+        # 3) máscara LoG (fórmula exacta)
+        log_kernel = (1.0 / (2.0 * np.pi * (sigma ** 3))) * \
+                     np.exp(-rsq / (2.0 * sigma ** 2)) * \
+                     ((rsq / (sigma ** 2)) - 2.0)
+
+        # 4) aplicar convolución (sin normalizar para mantener signos)
+        arr_log = Operaciones.aplicar_filtro_deslizante(img, log_kernel, normalizar=False)
+
+        # 5) detectar cruces por cero usando el umbral (asegurarse que threshold sea float)
+        bordes = Operaciones._zero_crossing_detector(arr_log, float(threshold))
+
+        return Imagen(Image.fromarray(bordes))
+
+    @staticmethod
+    def difusion_isotropica(img: Imagen, iteraciones: int) -> Imagen:
+        sigma = np.sqrt(2 * iteraciones)
+        # Usar un tamaño de kernel razonable para el sigma calculado
+        k_size = int(2 * np.ceil(3 * sigma) + 1)
+        return Operaciones.filtro_gaussiano(img, k_size=k_size, sigma=sigma)
 
     @staticmethod
     def difusion_anisotropica(img: Imagen, iteraciones: int, k: float) -> Imagen:
@@ -296,16 +407,43 @@ class Operaciones:
         return Operaciones.umbral(img, mejor_umbral)
 
     @staticmethod
+    def _get_otsu_threshold(channel: np.ndarray) -> int:
+        """Calcula el umbral de Otsu para un único canal."""
+        hist = np.bincount(channel.ravel(), minlength=256)
+        if np.sum(hist) == 0: return 0
+        p = hist / np.sum(hist)
+        max_var, mejor_umbral = 0, 0
+        for t in range(1, 256):
+            q1, q2 = np.sum(p[:t]), np.sum(p[t:])
+            if q1 == 0 or q2 == 0: continue
+            mu1 = np.sum(np.arange(t) * p[:t]) / q1
+            mu2 = np.sum(np.arange(t, 256) * p[t:]) / q2
+            var_entre = q1 * q2 * (mu1 - mu2)**2
+            if var_entre > max_var:
+                max_var, mejor_umbral = var_entre, t
+        return mejor_umbral
+
+    @staticmethod
     def umbralizacion_por_bandas_rgb(img: Imagen) -> Imagen:
+        """
+        Calcula el umbral de Otsu para cada banda RGB y aplica la umbralización.
+        Devuelve una imagen RGB con la combinación de las 3 umbralizaciones.
+        """
         arr = img.to_numpy()
         if arr.ndim != 3 or arr.shape[2] != 3:
             raise ValueError("La imagen debe ser RGB.")
         
         r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
-        mask = (Operaciones.umbral_otsu(r)) & \
-               (Operaciones.umbral_otsu(g)) & \
-               (Operaciones.umbral_otsu(b))
         
-        output = np.zeros_like(arr)
-        output[mask] = arr[mask]
-        return Imagen(Image.fromarray(output, 'RGB'))
+        r_thresh = Operaciones._get_otsu_threshold(r)
+        g_thresh = Operaciones._get_otsu_threshold(g)
+        b_thresh = Operaciones._get_otsu_threshold(b)
+        
+        r_bin = np.where(r >= r_thresh, 255, 0).astype(np.uint8)
+        g_bin = np.where(g >= g_thresh, 255, 0).astype(np.uint8)
+        b_bin = np.where(b >= b_thresh, 255, 0).astype(np.uint8)
+        
+        output_arr = np.stack((r_bin, g_bin, b_bin), axis=-1)
+        return Imagen(Image.fromarray(output_arr, 'RGB'))
+    
+
