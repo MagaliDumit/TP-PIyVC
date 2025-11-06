@@ -2,6 +2,19 @@ from PIL import Image
 import numpy as np
 from typing import Tuple
 
+
+# Crear imagen blanca 256x256
+img = np.full((256, 256), 255, dtype=np.uint8)
+
+# Definir cuadrado central negro de 128x128
+start = 64
+end = 192
+img[start:end, start:end] = 0
+
+# Guardar
+Image.fromarray(img).save("imagen_centro_bn.png")
+
+
 class Imagen:
     def __init__(self, data):
         """

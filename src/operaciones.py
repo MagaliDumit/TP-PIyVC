@@ -1,7 +1,7 @@
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from imagen import Imagen
-
+from collections import deque
 class Operaciones:
     @staticmethod
     def subtract(img1: Imagen, img2: Imagen) -> Imagen:
@@ -66,6 +66,45 @@ class Operaciones:
         arr[coords_y, coords_x] += ruido
         arr = np.clip(arr, 0, 255).astype(np.uint8)
         return Imagen(Image.fromarray(arr))
+    
+    def _manual_convolve(arr: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+        """
+        Aplica una convolución 2D manual.
+        Asume padding 'edge' (replicar bordes).
+        """
+        k_h, k_w = kernel.shape
+        pad_h, pad_w = k_h // 2, k_w // 2
+        
+        # Aplicar padding replicando el borde
+        arr_padded = np.pad(arr, ((pad_h, pad_h), (pad_w, pad_w)), mode='edge')
+        
+        out = np.zeros_like(arr)
+        
+        # Volteamos el kernel para una convolución correcta
+        kernel_flipped = np.flip(kernel, (0, 1))
+        
+        for y in range(out.shape[0]):
+            for x in range(out.shape[1]):
+                # La sub-matriz a multiplicar
+                sub_matrix = arr_padded[y : y + k_h, x : x + k_w]
+                # Multiplicación elemento a elemento y suma
+                out[y, x] = np.sum(sub_matrix * kernel_flipped)
+                
+        return out
+
+    # ---------------------------------------------------------------
+    # FUNCIÓN HELPER: Kernel Gaussiano
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def _gauss_kernel(sigma):
+        """Función helper para crear un kernel Gaussiano (sin scipy)"""
+        k_size = 2 * int(3.7 * sigma - 0.5) + 1
+        
+        ax = np.linspace(-(k_size - 1) / 2., (k_size - 1) / 2., k_size)
+        xx, yy = np.meshgrid(ax, ax)
+        kernel = np.exp(-0.5 * (np.square(xx) + np.square(yy)) / np.square(sigma))
+        return kernel / np.sum(kernel)
 
     @staticmethod
     def aplicar_ruido_multiplicativo(img: Imagen, generador_ruido, porcentaje: float) -> Imagen:
@@ -144,6 +183,8 @@ class Operaciones:
 
     @staticmethod
     def filtro_gaussiano(img: Imagen, k_size: int = 3, sigma: float = 1.0) -> Imagen:
+        k_size = 2 * int(3.7 * sigma - 0.5) + 1
+
         ax = np.linspace(-(k_size - 1) / 2., (k_size - 1) / 2., k_size)
         gauss = np.exp(-0.5 * np.square(ax) / np.square(sigma))
         kernel = np.outer(gauss, gauss)
@@ -446,4 +487,493 @@ class Operaciones:
         output_arr = np.stack((r_bin, g_bin, b_bin), axis=-1)
         return Imagen(Image.fromarray(output_arr, 'RGB'))
     
+    def _mediana_manual(arr):
+        h, w = arr.shape
+        out = arr.copy()
+        for y in range(1, h-1):
+            for x in range(1, w-1):
+                vec = arr[y-1:y+2, x-1:x+2].flatten()
+                out[y, x] = np.median(vec)
+        return out
 
+#------------ TP 3 --------------
+
+    @staticmethod
+    def detector_canny(img: Imagen, sigma=1.4, t1=20, t2=50):
+        """
+        Implementa Canny (sin scipy) con la ETAPA 4 MEJORADA (alineación de gradiente).
+        """
+        img_gris = Imagen(img.to_pil().convert("L"))
+        arr_orig = img_gris.to_numpy().astype(np.float64)
+        h, w = arr_orig.shape
+        
+        # --- ETAPA 1: Suavizamiento (Filtro Gaussiano) ---
+        kernel_gauss = Operaciones._gauss_kernel(sigma)
+        arr_suav = Operaciones._manual_convolve(arr_orig, kernel_gauss)
+
+        # --- ETAPA 2: Cálculo de magnitud y dirección (Sobel) ---
+        Kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float64)
+        Ky = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float64)
+        
+        Ix = Operaciones._manual_convolve(arr_suav, Kx)
+        Iy = Operaciones._manual_convolve(arr_suav, Ky)
+        
+        mag = np.hypot(Ix, Iy)
+        mag_max = np.max(mag)
+        if mag_max > 0:
+            mag = (mag / mag_max) * 255 # Normalizar
+        
+        theta = np.arctan2(Iy, Ix) # en radianes
+        angle = np.rad2deg(theta) # Ángulo en grados para la ETAPA 4
+        angle[angle < 0] += 180   # Mapear a [0, 180] para ETAPA 3
+
+        # --- ETAPA 3: Supresión de no máximos (NMS) ---
+        # (Esta etapa crea la variable 'nms' que usaremos)
+        nms = np.zeros((h, w), dtype=np.float64)
+        
+        for y in range(1, h - 1):
+            for x in range(1, w - 1):
+                q = 255
+                r = 255
+                ang_q = angle[y, x] # ángulo cuantizado
+
+                if (0 <= ang_q < 22.5) or (157.5 <= ang_q <= 180): # 0°
+                    q = mag[y, x + 1]
+                    r = mag[y, x - 1]
+                elif (22.5 <= ang_q < 67.5): # 45°
+                    q = mag[y - 1, x + 1]
+                    r = mag[y + 1, x - 1]
+                elif (67.5 <= ang_q < 112.5): # 90°
+                    q = mag[y - 1, x]
+                    r = mag[y + 1, x]
+                elif (112.5 <= ang_q < 157.5): # 135°
+                    q = mag[y - 1, x - 1]
+                    r = mag[y + 1, x + 1]
+
+                if (mag[y, x] >= q) and (mag[y, x] >= r):
+                    nms[y, x] = mag[y, x]
+        
+        # --- ETAPA 4: Umbralización con histéresis MEJORADA (y CORREGIDA) ---
+
+        res = np.zeros((h, w), dtype=np.uint8)
+
+        # 2) Identificar bordes fuertes (t > t2)
+        #    CORRECCIÓN: Usar 'nms', NO 'mag'
+        strong = nms >= t2
+        res[strong] = 255
+
+        # 3) Identificar candidatos débiles (t1 <= t <= t2)
+        #    CORRECCIÓN: Usar 'nms', NO 'mag'
+        weak = (nms >= t1) & (nms < t2)
+
+        # 4) BFS (deque) para conectar débiles → fuertes **si están alineados**
+        strong_y, strong_x = np.where(strong)
+        queue = deque(list(zip(strong_y, strong_x)))
+
+        # Vecindad 8
+        vecinos = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
+        
+        # Volver a mapear los ángulos de ETAPA 2 a [-180, 180] para 
+        # que la resta 'abs(ang - angle[y, x])' funcione correctamente
+        # (ej. 179° y -179° son similares, la resta debe ser 2°, no 358°)
+        angle_check = np.rad2deg(theta) # Usamos el 'theta' original de arctan2
+
+        while queue:
+            y, x = queue.popleft()
+
+            for dy, dx in vecinos:
+                yy, xx = y + dy, x + dx
+                if 0 <= yy < h and 0 <= xx < w:
+                    # Solo agregar píxeles débiles ('weak') conectados
+                    if weak[yy, xx]:
+                        
+                        # --- Verificación de alineación ---
+                        ang_fuerte = angle_check[y, x]
+                        ang_debil = angle_check[yy, xx]
+                        
+                        # Comparamos la diferencia angular
+                        diff = abs(ang_fuerte - ang_debil)
+                        
+                        # El 'wrap-around' (ej. 170° y -170° son cercanos)
+                        if diff > 180:
+                            diff = 360 - diff 
+
+                        # permitimos variación de ±20°
+                        if diff < 20:
+                            res[yy, xx] = 255
+                            weak[yy, xx] = False # Marcar como ya procesado
+                            queue.append((yy, xx))
+
+        return Imagen(Image.fromarray(res))
+
+
+
+
+    @staticmethod
+    def canny_exacto(img):
+        import numpy as np
+        arr = np.array(img.to_pil().convert("L"), dtype=float)
+
+        # Derivadas exactas (sin suavizar)
+        # dx[y,x] = I[y,x+1] - I[y,x]
+        dx = np.zeros_like(arr)
+        dx[:, :-1] = arr[:, 1:] - arr[:, :-1]
+
+        dy = np.zeros_like(arr)
+        dy[:-1, :] = arr[1:, :] - arr[:-1, :]
+
+        # Magnitud exacta
+        M = np.sqrt(dx**2 + dy**2)
+
+        # Como la imagen es binaria, borde real = cambio fuerte = M > 0
+        edge = (M > 0).astype(np.uint8) * 255
+
+        return Imagen(Image.fromarray(edge))
+
+
+    @staticmethod
+    def _susan_core(arr, t=6):
+        h, w = arr.shape
+        R = 3
+        mask = [(dy, dx) for dy in range(-R, R+1) for dx in range(-R, R+1)
+                if dx*dx+dy*dy <= R*R]
+
+        n = np.zeros_like(arr, dtype=float)
+
+        for y in range(R, h-R):
+            for x in range(R, w-R):
+                centro = arr[y, x]
+                cnt = 0
+                for dy, dx in mask:
+                    if abs(arr[y+dy, x+dx] - centro) < t:
+                        cnt += 1
+                n[y, x] = 1 - cnt/len(mask)
+
+        return n
+
+    #@staticmethod
+    #def susan_bordes(img: Imagen, t=15, umbral=0.45):
+    #    arr = np.array(img.to_pil().convert("L"), dtype=float)
+    #    s = Operaciones._susan_core(arr, t)
+    #    out = np.where(abs(s - 0.5) < umbral, 255, 0).astype(np.uint8)
+    #    return Imagen(Image.fromarray(out))
+
+    @staticmethod
+    def susan_bordes(img: Imagen, umbral, grosor=1):
+        import numpy as np
+        tam_min=2
+        I = np.array(img.to_pil().convert("L"), dtype=np.int32)
+        I = ((I - I.min()) / (I.max() - I.min()) * 255).astype(np.int32)
+        I = Operaciones._mediana_manual(I)
+
+        h, w = I.shape
+
+        mask = [(dy, dx) for dy in range(-3, 4) for dx in range(-3, 4) if dy*dy + dx*dx <= 9]
+        area_mask = len(mask)
+
+        respuesta = np.zeros_like(I)
+
+        for y in range(3, h-3):
+            for x in range(3, w-3):
+                p = I[y, x]
+                N = 0
+                for dy, dx in mask:
+                    if abs(I[y+dy, x+dx] - p) < umbral:
+                        N += 1
+                respuesta[y, x] = N
+
+        bordes = respuesta < (0.90 * area_mask)
+
+        clean = bordes.copy()
+        for y in range(1, h-1):
+            for x in range(1, w-1):
+                if clean[y, x] and np.sum(clean[y-1:y+2, x-1:x+2]) < tam_min:
+                    clean[y, x] = False
+
+        pil = img.to_pil().convert("RGB")
+
+        # DIBUJAR CON GROSOR
+        for (y, x) in zip(*np.where(clean)):
+            for dy in range(-grosor, grosor+1):
+                for dx in range(-grosor, grosor+1):
+                    yy, xx = y+dy, x+dx
+                    if 0 <= yy < h and 0 <= xx < w:
+                        pil.putpixel((xx, yy), (0, 255, 255))  # CYAN
+
+        return Imagen(pil)
+
+
+
+    #@staticmethod
+    #def susan_esquinas(img: Imagen, t=15, umbral=0.20):
+    #    arr = np.array(img.to_pil().convert("L"), dtype=float)
+    #    s = Operaciones._susan_core(arr, t)
+    #    out = np.where(s > (0.75 - umbral), 255, 0).astype(np.uint8)
+    #    return Imagen(Image.fromarray(out))
+
+    @staticmethod
+    def susan_esquinas(img: Imagen, umbral, grosor=1):
+
+        I = np.array(img.to_pil().convert("L"), dtype=np.int32)
+        I = ((I - I.min()) / (I.max() - I.min()) * 255).astype(np.int32)
+        I = Operaciones._mediana_manual(I)
+
+        h, w = I.shape
+
+        mask = [(dy, dx) for dy in range(-3, 4) for dx in range(-3, 4) if dy*dy + dx*dx <= 9]
+        area_mask = len(mask)
+
+        respuesta = np.zeros_like(I)
+
+        for y in range(3, h-3):
+            for x in range(3, w-3):
+                p = I[y, x]
+                N = 0
+                for dy, dx in mask:
+                    if abs(I[y+dy, x+dx] - p) < umbral:
+                        N += 1
+                respuesta[y, x] = N
+
+        # Más sensible a esquinas → aumentamos el umbral de selección
+        esquinas = respuesta < (0.55 * area_mask)
+
+        # Dibujar como CRUZ para que se vea bien
+        pil = img.to_pil().convert("RGB")
+
+        for (y, x) in zip(*np.where(esquinas)):
+            for d in range(-grosor, grosor+1):
+                if 0 <= y+d < h:
+                    pil.putpixel((x, y+d), (0, 255, 255))
+                if 0 <= x+d < w:
+                    pil.putpixel((x+d, y), (0, 255, 255))
+
+        return Imagen(pil)
+
+
+
+    @staticmethod
+    def hough_rectas(img_bordes: Imagen):
+        """
+        Calcula el acumulador de Hough.
+        Recibe una IMAGEN DE BORDES (binaria).
+        Devuelve (Acumulador, rhos, thetas)
+        """
+        bw = np.array(img_bordes.to_pil().convert("L"))
+        # Asegurarse que los bordes (blanco) son 255 y el fondo 0
+        bw = np.where(bw > 128, 255, 0) 
+
+        y, x = np.nonzero(bw)
+        h, w = bw.shape
+        diag = int(np.hypot(h, w))
+
+        # Rango de Thetas (-90 a 89)
+        thetas = np.deg2rad(np.arange(-90, 90))
+        # Rango de Rhos (-diag a diag)
+        rhos = np.arange(-diag, diag + 1) # +1 para incluir 'diag'
+
+        # Inicializar acumulador
+        A = np.zeros((len(rhos), len(thetas)), dtype=np.uint64)
+
+        # Pre-calcular cos y sin para eficiencia
+        cos_thetas = np.cos(thetas)
+        sin_thetas = np.sin(thetas)
+
+        # Votar en el acumulador
+        for (yy, xx) in zip(y, x):
+            for i in range(len(thetas)):
+                # Calcular rho
+                rho_val = xx * cos_thetas[i] + yy * sin_thetas[i]
+                
+                # Encontrar el índice más cercano en 'rhos'
+                # (rho_val + diag) mapea [-diag, diag] a [0, 2*diag]
+                rho_idx = int(round(rho_val)) + diag
+                
+                # Asegurar que el índice esté dentro de los límites de 'rhos'
+                if 0 <= rho_idx < len(rhos):
+                    A[rho_idx, i] += 1
+
+        return A, rhos, thetas
+
+    @staticmethod
+    def hough_dibujar_rectas(img_original: Imagen, img_bordes: Imagen, umbral: int):
+        """
+        Dibuja las líneas detectadas por Hough sobre la imagen original.
+        """
+        # 1. Calcular el acumulador de Hough usando la imagen de bordES
+        A, rhos, thetas = Operaciones.hough_rectas(img_bordes)
+
+        # 2. Encontrar los picos en el acumulador (votos > umbral)
+        #    np.nonzero devuelve (array_indices_y, array_indices_x)
+        indices_y, indices_x = np.nonzero(A > umbral)
+
+        # 3. Preparar la imagen original para dibujar
+        #    Convertir a RGB para dibujar líneas de color (ej. rojo)
+        out_pil = img_original.to_pil().convert("RGB")
+        draw = ImageDraw.Draw(out_pil)
+        w, h = out_pil.size
+
+        # 4. Iterar sobre los picos y dibujar cada línea
+        for i in range(len(indices_y)):
+            # Obtener el rho y theta de los índices
+            rho_idx = indices_y[i]
+            theta_idx = indices_x[i]
+            
+            rho = rhos[rho_idx]
+            theta = thetas[theta_idx]
+            
+            # Convertir la línea (rho, theta) a formato (x1,y1), (x2,y2)
+            a = np.cos(theta)
+            b = np.sin(theta)
+            
+            # (x0, y0) es un punto en la línea
+            x0 = a * rho
+            y0 = b * rho
+
+            # Calcular dos puntos (x1,y1) y (x2,y2) fuera de la imagen
+            # para asegurarse de que la línea la cruce de lado a lado
+            x1 = int(x0 + 1500 * (-b)) # 1500 es un nro grande
+            y1 = int(y0 + 1500 * (a))
+            x2 = int(x0 - 1500 * (-b))
+            y2 = int(y0 - 1500 * (a))
+
+            # Dibujar la línea
+            draw.line(((x1, y1), (x2, y2)), fill="red", width=2)
+        
+        # 5. Devolver la imagen con las líneas dibujadas
+        return Imagen(out_pil)
+    
+
+    @staticmethod
+    def segmentacion_intercambio(img: Imagen, rect, max_iters=200):
+        """
+        Implementación del modelo de Intercambio de Píxeles (Shi & Karl).
+        - img: Imagen original (Imagen)
+        - rect: (x1, y1, x2, y2) rectángulo inicial (coordenadas en la imagen original)
+        - max_iters: número máximo de iteraciones
+        Devuelve: Imagen RGB original con L_in (rosa) y L_out (celeste) dibujadas.
+        """
+        import numpy as np
+        from PIL import Image
+
+        if rect is None:
+            raise ValueError("Se requiere rect (x1,y1,x2,y2) como región inicial.")
+
+        x1, y1, x2, y2 = rect
+        # Normalizar caja
+        x1, x2 = max(0, min(x1, x2)), max(0, max(x1, x2))
+        y1, y2 = max(0, min(y1, y2)), max(0, max(y1, y2))
+
+        I_rgb = np.array(img.to_pil().convert("RGB"))
+        I = np.array(img.to_pil().convert("L"), dtype=float)  # trabajo en gris para Fd
+
+        h, w = I.shape
+
+        # --- Inicializar Phi: fondo = 3, objeto interior = -3 ---
+        Phi = np.full((h, w), 3, dtype=int)
+        Phi[y1:y2, x1:x2] = -3
+
+        # Calcular theta0 (fondo) y theta1 (objeto) como medias iniciales
+        # para estabilidad ignoramos la región inicial al estimar el fondo -> muestreo de borde
+        fondo_mask = (Phi == 3)
+        objeto_mask = (Phi == -3)
+        if np.sum(fondo_mask) == 0 or np.sum(objeto_mask) == 0:
+            raise ValueError("Región inicial inválida: objeto o fondo vacío.")
+        theta0 = np.mean(I[fondo_mask])
+        theta1 = np.mean(I[objeto_mask])
+
+        eps = 1e-9
+        def Fd_val(px):
+            return np.log((abs(theta0 - px) + eps) / (abs(theta1 - px) + eps))
+
+        # vecinos 4-conectados
+        neigh = [(1,0),(-1,0),(0,1),(0,-1)]
+
+        # Helper: construir L_in y L_out (contornos de 1-pixel)
+        def compute_contours(P):
+            L_in_set = set()
+            L_out_set = set()
+            for y in range(1, h-1):
+                for x in range(1, w-1):
+                    if P[y,x] < 0:
+                        # si existe vecino positivo -> L_in
+                        for dy,dx in neigh:
+                            if P[y+dy, x+dx] > 0:
+                                L_in_set.add((y,x)); break
+                    elif P[y,x] > 0:
+                        for dy,dx in neigh:
+                            if P[y+dy, x+dx] < 0:
+                                L_out_set.add((y,x)); break
+            return L_in_set, L_out_set
+
+        L_in, L_out = compute_contours(Phi)
+
+        it = 0
+        moved_any = True
+
+        while it < max_iters and moved_any:
+            it += 1
+            moved_any = False
+
+            # --- Paso 1: L_out -> posible convertirse en interior (avanza hacia objeto) ---
+            to_in = []
+            for (y,x) in list(L_out):
+                fd = Fd_val(I[y,x])
+                if fd > 0:
+                    to_in.append((y,x))
+            if to_in:
+                moved_any = True
+            # aplicar movimientos L_out -> -1 (temporal)
+            for (y,x) in to_in:
+                Phi[y,x] = -1  # marcador que avanza hacia objeto
+                # sus vecinos exteriores se marcan como candidatos externos (1)
+                for dy,dx in neigh:
+                    yy, xx = y+dy, x+dx
+                    if 0<=yy<h and 0<=xx<w and Phi[yy,xx] == 3:
+                        Phi[yy,xx] = 1
+
+            # convertir marcadores -1 que están rodeados por negativo en interior definitivo -3
+            # (evita que la línea crezca en grosor)
+            for (y,x) in list(zip(*np.where(Phi == -1))):
+                # si tiene al menos un vecino < 0 (ya interior), hacemos interior definitivo
+                if any(0 <= y+dy < h and 0 <= x+dx < w and Phi[y+dy, x+dx] < 0 for dy,dx in neigh):
+                    Phi[y,x] = -3
+
+            # --- Paso 2: L_in -> posible convertirse en exterior (retrocede hacia afuera) ---
+            to_out = []
+            for (y,x) in list(L_in):
+                fd = Fd_val(I[y,x])
+                if fd < 0:
+                    to_out.append((y,x))
+            if to_out:
+                moved_any = True
+            # aplicar movimientos L_in -> 1 (temporal)
+            for (y,x) in to_out:
+                Phi[y,x] = 1  # marcador que se mueve hacia el exterior
+                for dy,dx in neigh:
+                    yy, xx = y+dy, x+dx
+                    if 0<=yy<h and 0<=xx<w and Phi[yy,xx] == -3:
+                        Phi[yy,xx] = -1  # vecino interior se convierte en candidato interno
+
+            # convertir marcadores 1 que están rodeados por positivos en exterior definitivo 3
+            for (y,x) in list(zip(*np.where(Phi == 1))):
+                if any(0 <= y+dy < h and 0 <= x+dx < w and Phi[y+dy, x+dx] > 0 for dy,dx in neigh):
+                    Phi[y,x] = 3
+
+            # Recalcular L_in y L_out (líneas de un píxel) después de los ajustes
+            L_in, L_out = compute_contours(Phi)
+
+            # Si no hubo mover_any en esta iteración, el algoritmo converge.
+            # (moved_any fue marcado si hubo to_in o to_out)
+            # bucle continuará hasta max_iters o hasta que no se muevan píxeles.
+
+        # --- Construir imagen de salida: original RGB + dibujar L_in (rosa) y L_out (celeste) ---
+        out_rgb = I_rgb.copy()
+        # Asegurarse que las coordenadas son válidas
+        for (y,x) in L_in:
+            if 0 <= y < h and 0 <= x < w:
+                out_rgb[y, x] = np.array([255, 0, 255], dtype=np.uint8)  # rosa
+        for (y,x) in L_out:
+            if 0 <= y < h and 0 <= x < w:
+                out_rgb[y, x] = np.array([0, 255, 255], dtype=np.uint8)  # celeste
+
+        return Imagen(Image.fromarray(out_rgb))

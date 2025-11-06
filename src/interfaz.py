@@ -118,6 +118,41 @@ class ImageApp:
         umbral_menu.add_command(label="Umbralización por Bandas (RGB)", command=self.umbralizacion_por_bandas_rgb)
 
 
+
+    # -------------- TP3 MENÚ -----------------
+        tp3_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="TP3 - Detectores de Características", menu=tp3_menu)
+
+        # Detectores de bordes
+        canny_menu = tk.Menu(tp3_menu, tearoff=0)
+        tp3_menu.add_cascade(label="Detector de Bordes", menu=canny_menu)
+        canny_menu.add_command(label="Canny figuras", command=self.aplicar_canny)
+        canny_menu.add_command(label="Canny formas", command=self.aplicar_canny_exacto)
+
+        # Método SUSAN
+        susan_menu = tk.Menu(tp3_menu, tearoff=0)
+        tp3_menu.add_cascade(label="Método SUSAN", menu=susan_menu)
+        susan_menu.add_command(label="SUSAN - Bordes", command=self.aplicar_susan_bordes)
+        susan_menu.add_command(label="SUSAN - Esquinas", command=self.aplicar_susan_esquinas)
+
+        # Transformada de Hough
+        hough_menu = tk.Menu(tp3_menu, tearoff=0)
+        tp3_menu.add_cascade(label="Transformada de Hough", menu=hough_menu)
+        hough_menu.add_command(label="Detección de Rectas", command=self.aplicar_hough)
+        # Slider para umbral de Hough
+        #self.umbral_hough = tk.IntVar(value=50)
+#
+        #tk.Label(self.root, text="Umbral Hough").pack()
+        #self.slider_hough = tk.Scale(self.root, from_=1, to=200, orient=tk.HORIZONTAL, variable=self.umbral_hough)
+        #self.slider_hough.pack()
+
+
+        # Segmentación
+        seg_menu = tk.Menu(tp3_menu, tearoff=0)
+        tp3_menu.add_cascade(label="Segmentación", menu=seg_menu)
+        seg_menu.add_command(label="Segmentación por Intercambio de Píxeles", command=self.aplicar_segmentacion)
+
+
     def cargar_imagen_primero(self):
         if not self.image:
             messagebox.showwarning("Atención", "Cargue primero una imagen")
@@ -230,15 +265,32 @@ class ImageApp:
     def on_release(self, event):
         ox, oy = self._map_to_original(event.x, event.y)
         self.region_end = (ox, oy)
+
         self.canvas_original.unbind("<Button-1>")
         self.canvas_original.unbind("<B1-Motion>")
         self.canvas_original.unbind("<ButtonRelease-1>")
-        x1,y1,x2,y2 = self.region_start[0], self.region_start[1], self.region_end[0], self.region_end[1]
-        if x2<=x1 or y2<=y1:
+
+        x1, y1 = self.region_start
+        x2, y2 = self.region_end
+
+        if x2 <= x1 or y2 <= y1:
             messagebox.showwarning("Región inválida", "La región seleccionada es inválida")
             return
-        region = self.image.copy_region((min(x1,x2), min(y1,y2), max(x1,x2), max(y1,y2)))
-        self.show_image(region, self.canvas_result)
+
+        # Si sólo queríamos copiar región → comportamiento normal
+        if not hasattr(self, "segmentar_despues_de_region") or not self.segmentar_despues_de_region:
+            region = self.image.copy_region((x1,y1,x2,y2))
+            self.show_image(region, self.canvas_result)
+            return
+
+        # Caso Segmentación Intercambio de Píxeles
+        del self.segmentar_despues_de_region   # limpiamos flag
+
+        # Ejecutar segmentación REAL
+        box = (min(x1,x2), min(y1,y2), max(x1,x2), max(y1,y2))
+        iters = 60
+        res = Operaciones.segmentacion_intercambio(self.image, box, iters)
+        self.show_image(res, self.canvas_result)
 
     def _map_to_original(self, vx, vy):
         disp_w, disp_h = self.current_display_size
@@ -262,6 +314,7 @@ class ImageApp:
         box = (min(x1,x2), min(y1,y2), max(x1,x2), max(y1,y2))
         region = self.image.copy_region(box)
         self.show_image(region, self.canvas_result)
+        
 
     def subtract_images(self):
         if not self.cargar_imagen_primero(): return
@@ -468,3 +521,69 @@ class ImageApp:
             self.show_image(result, self.canvas_result)
         except Exception as e:
             messagebox.showerror("Error", f"Ocurrió un error: {e}")
+
+
+    #------------ TP 3 Interfaz ---------------
+
+    def aplicar_canny(self):
+        if not self.cargar_imagen_primero(): return
+        res = Operaciones.detector_canny(self.image)
+        self.show_image(res, self.canvas_result)
+
+    def aplicar_canny_exacto(self):
+        if not self.cargar_imagen_primero(): return
+        res = Operaciones.canny_exacto(self.image)
+        self.show_image(res, self.canvas_result)
+
+    def aplicar_susan_bordes(self):
+        if not self.cargar_imagen_primero(): return
+        umbral = simpledialog.askinteger("Umbral", 
+                                         "Ingrese el umbral(ej: 100-200):",
+                                         initialvalue=200, minvalue=1)
+        res = Operaciones.susan_bordes(self.image, umbral)
+        self.show_image(res, self.canvas_result)
+
+    def aplicar_susan_esquinas(self):
+        if not self.cargar_imagen_primero(): return
+        umbral = simpledialog.askinteger("Umbral", 
+                                         "Ingrese el umbral(ej: 100-200):",
+                                         initialvalue=200, minvalue=1)
+        res = Operaciones.susan_esquinas(self.image, umbral)
+        self.show_image(res, self.canvas_result)
+
+
+    def aplicar_hough(self):
+        if not self.cargar_imagen_primero(): return
+        
+        
+        umbral = simpledialog.askinteger("Umbral de Hough", 
+                                         "Ingrese el umbral de votos (ej: 100-200):",
+                                         initialvalue=200, minvalue=1)
+        if umbral is None: return # El usuario canceló
+
+        try:
+            # 2. (PASO CLAVE) Ejecutar un detector de bordes PRIMERO
+            #    Usamos Canny, como pide el TP3.
+            messagebox.showinfo("Procesando", "Paso 1/2: Detectando bordes (Canny)...")
+            bordes_img = Operaciones.detector_canny(self.image)
+
+            # 3. Llamar a la nueva función de dibujo
+            #    Se le pasa la IMAGEN ORIGINAL, la IMAGEN DE BORDES y el UMBRAL
+            messagebox.showinfo("Procesando", "Paso 2/2: Calculando Hough y dibujando líneas...")
+            res_img = Operaciones.hough_dibujar_rectas(self.image, bordes_img, umbral)
+            
+            # 4. Mostrar el resultado (Original + Líneas)
+            self.show_image(res_img, self.canvas_result)
+
+        except Exception as e:
+            messagebox.showerror("Error en Hough", f"Ocurrió un error: {e}")
+            import traceback
+            print("Error detallado en Hough:")
+            print(traceback.format_exc()) # Imprime el error completo en la consola
+
+
+    def aplicar_segmentacion(self):
+        if not self.cargar_imagen_primero():
+            return
+        self.segmentar_despues_de_region = True   
+        self.activate_region_selection()        
